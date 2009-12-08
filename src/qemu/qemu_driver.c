@@ -249,15 +249,18 @@ static int qemuDomainObjBeginJobWithDriver(struct qemud_driver *driver,
  *
  * To be called after completing the work associated with the
  * earlier  qemuDomainBeginJob() call
+ *
+ * Returns remaining refcount on 'obj', maybe 0 to indicated it
+ * was deleted
  */
-static void qemuDomainObjEndJob(virDomainObjPtr obj)
+static int ATTRIBUTE_RETURN_CHECK qemuDomainObjEndJob(virDomainObjPtr obj)
 {
     qemuDomainObjPrivatePtr priv = obj->privateData;
 
     priv->jobActive = 0;
     virCondSignal(&priv->jobCond);
 
-    virDomainObjUnref(obj);
+    return virDomainObjUnref(obj);
 }
 
 
@@ -2890,9 +2893,9 @@ static virDomainPtr qemudDomainCreate(virConnectPtr conn, const char *xml,
         goto cleanup; /* XXXX free the 'vm' we created ? */
 
     if (qemudStartVMDaemon(conn, driver, vm, NULL, -1) < 0) {
-        qemuDomainObjEndJob(vm);
-        virDomainRemoveInactive(&driver->domains,
-                                vm);
+        if (qemuDomainObjEndJob(vm) > 0)
+            virDomainRemoveInactive(&driver->domains,
+                                    vm);
         vm = NULL;
         goto endjob;
     }
@@ -2905,8 +2908,9 @@ static virDomainPtr qemudDomainCreate(virConnectPtr conn, const char *xml,
     if (dom) dom->id = vm->def->id;
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     virDomainDefFree(def);
@@ -2961,7 +2965,8 @@ static int qemudDomainSuspend(virDomainPtr dom) {
     ret = 0;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3020,7 +3025,8 @@ static int qemudDomainResume(virDomainPtr dom) {
     ret = 0;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3064,7 +3070,8 @@ static int qemudDomainShutdown(virDomainPtr dom) {
     qemuDomainObjExitMonitor(vm);
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3103,16 +3110,17 @@ static int qemudDomainDestroy(virDomainPtr dom) {
                                      VIR_DOMAIN_EVENT_STOPPED,
                                      VIR_DOMAIN_EVENT_STOPPED_DESTROYED);
     if (!vm->persistent) {
-        qemuDomainObjEndJob(vm);
-        virDomainRemoveInactive(&driver->domains,
-                                vm);
+        if (qemuDomainObjEndJob(vm) > 0)
+            virDomainRemoveInactive(&driver->domains,
+                                    vm);
         vm = NULL;
     }
     ret = 0;
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3253,7 +3261,8 @@ static int qemudDomainSetMemory(virDomainPtr dom, unsigned long newmem) {
     ret = 0;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3303,7 +3312,8 @@ static int qemudDomainGetInfo(virDomainPtr dom,
             err = qemuMonitorGetBalloonInfo(priv->mon, &balloon);
             qemuDomainObjExitMonitor(vm);
             if (err < 0) {
-                qemuDomainObjEndJob(vm);
+                if (qemuDomainObjEndJob(vm) == 0)
+                    vm = NULL;
                 goto cleanup;
             }
 
@@ -3313,7 +3323,10 @@ static int qemudDomainGetInfo(virDomainPtr dom,
             else
                 info->memory = balloon;
 
-            qemuDomainObjEndJob(vm);
+            if (qemuDomainObjEndJob(vm) == 0) {
+                vm = NULL;
+                goto cleanup;
+            }
         } else {
             info->memory = vm->def->memory;
         }
@@ -3522,15 +3535,16 @@ static int qemudDomainSave(virDomainPtr dom,
                                      VIR_DOMAIN_EVENT_STOPPED,
                                      VIR_DOMAIN_EVENT_STOPPED_SAVED);
     if (!vm->persistent) {
-        qemuDomainObjEndJob(vm);
-        virDomainRemoveInactive(&driver->domains,
-                                vm);
+        if (qemuDomainObjEndJob(vm) > 0)
+            virDomainRemoveInactive(&driver->domains,
+                                    vm);
         vm = NULL;
     }
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (fd != -1)
@@ -3617,7 +3631,8 @@ static int qemudDomainCoreDump(virDomainPtr dom,
     }
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -3678,7 +3693,8 @@ static int qemudDomainSetVcpus(virDomainPtr dom, unsigned int nvcpus) {
     ret = 0;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -4099,9 +4115,9 @@ static int qemudDomainRestore(virConnectPtr conn,
     fd = -1;
     if (ret < 0) {
         if (!vm->persistent) {
-            qemuDomainObjEndJob(vm);
-            virDomainRemoveInactive(&driver->domains,
-                                    vm);
+            if (qemuDomainObjEndJob(vm) > 0)
+                virDomainRemoveInactive(&driver->domains,
+                                        vm);
             vm = NULL;
         }
         goto endjob;
@@ -4129,8 +4145,9 @@ static int qemudDomainRestore(virConnectPtr conn,
     ret = 0;
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     virDomainDefFree(def);
@@ -4178,7 +4195,10 @@ static char *qemudDomainDumpXML(virDomainPtr dom,
             qemuDomainObjEnterMonitor(vm);
             err = qemuMonitorGetBalloonInfo(priv->mon, &balloon);
             qemuDomainObjExitMonitor(vm);
-            qemuDomainObjEndJob(vm);
+            if (qemuDomainObjEndJob(vm) == 0) {
+                vm = NULL;
+                goto cleanup;
+            }
             if (err < 0)
                 goto cleanup;
             if (err > 0)
@@ -4411,7 +4431,8 @@ static int qemudDomainStart(virDomainPtr dom) {
                                          VIR_DOMAIN_EVENT_STARTED_BOOTED);
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -5195,7 +5216,8 @@ static int qemudDomainAttachDevice(virDomainPtr dom,
         ret = -1;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (cgroup)
@@ -5518,7 +5540,8 @@ static int qemudDomainDetachDevice(virDomainPtr dom,
         ret = -1;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     virDomainDeviceDefFree(dev);
@@ -5842,7 +5865,8 @@ qemudDomainBlockStats (virDomainPtr dom,
     qemuDomainObjExitMonitor(vm);
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     VIR_FREE(qemu_dev_name);
@@ -6060,7 +6084,8 @@ qemudDomainMemoryPeek (virDomainPtr dom,
     ret = 0;
 
 endjob:
-    qemuDomainObjEndJob(vm);
+    if (qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     VIR_FREE(tmp);
@@ -6554,8 +6579,8 @@ qemudDomainMigratePrepareTunnel(virConnectPtr dconn,
     if (qemust == NULL) {
         qemudShutdownVMDaemon(NULL, driver, vm);
         if (!vm->persistent) {
-            qemuDomainObjEndJob(vm);
-            virDomainRemoveInactive(&driver->domains, vm);
+            if (qemuDomainObjEndJob(vm) > 0)
+                virDomainRemoveInactive(&driver->domains, vm);
             vm = NULL;
         }
         virReportSystemError(dconn, errno,
@@ -6573,8 +6598,9 @@ qemudDomainMigratePrepareTunnel(virConnectPtr dconn,
     ret = 0;
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     virDomainDefFree(def);
@@ -6741,8 +6767,8 @@ qemudDomainMigratePrepare2 (virConnectPtr dconn,
          * should have already done that.
          */
         if (!vm->persistent) {
-            qemuDomainObjEndJob(vm);
-            virDomainRemoveInactive(&driver->domains, vm);
+            if (qemuDomainObjEndJob(vm) > 0)
+                virDomainRemoveInactive(&driver->domains, vm);
             vm = NULL;
         }
         goto endjob;
@@ -6754,8 +6780,9 @@ qemudDomainMigratePrepare2 (virConnectPtr dconn,
     ret = 0;
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     virDomainDefFree(def);
@@ -7245,8 +7272,8 @@ qemudDomainMigratePerform (virDomainPtr dom,
                                      VIR_DOMAIN_EVENT_STOPPED_MIGRATED);
     if (!vm->persistent || (flags & VIR_MIGRATE_UNDEFINE_SOURCE)) {
         virDomainDeleteConfig(dom->conn, driver->configDir, driver->autostartDir, vm);
-        qemuDomainObjEndJob(vm);
-        virDomainRemoveInactive(&driver->domains, vm);
+        if (qemuDomainObjEndJob(vm) > 0)
+            virDomainRemoveInactive(&driver->domains, vm);
         vm = NULL;
     }
     ret = 0;
@@ -7270,8 +7297,9 @@ endjob:
                                          VIR_DOMAIN_EVENT_RESUMED,
                                          VIR_DOMAIN_EVENT_RESUMED_MIGRATED);
     }
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
@@ -7369,15 +7397,16 @@ qemudDomainMigrateFinish2 (virConnectPtr dconn,
                                          VIR_DOMAIN_EVENT_STOPPED,
                                          VIR_DOMAIN_EVENT_STOPPED_FAILED);
         if (!vm->persistent) {
-            qemuDomainObjEndJob(vm);
-            virDomainRemoveInactive(&driver->domains, vm);
+            if (qemuDomainObjEndJob(vm) > 0)
+                virDomainRemoveInactive(&driver->domains, vm);
             vm = NULL;
         }
     }
 
 endjob:
-    if (vm)
-        qemuDomainObjEndJob(vm);
+    if (vm &&
+        qemuDomainObjEndJob(vm) == 0)
+        vm = NULL;
 
 cleanup:
     if (vm)
