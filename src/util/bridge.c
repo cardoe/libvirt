@@ -486,12 +486,29 @@ brAddTap(brControl *ctl,
 {
     int fd;
     struct ifreq ifr;
+    const char * const argv[] = { "modprobe", "tun", NULL };
+    int err, exitstatus = 0;
 
     if (!ctl || !ctl->fd || !bridge || !ifname)
         return EINVAL;
 
-    if ((fd = open("/dev/net/tun", O_RDWR)) < 0)
-      return errno;
+    if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
+        err = errno;
+
+        /* If the tun device was non-existent, lets try to load the module */
+        if (err == ENOENT) {
+            if (virRun(argv, &exitstatus) < 0) {
+                return ENOENT;
+            }
+
+            /* Now lets try to open the tun device again */
+            if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
+                return errno;
+            }
+        } else {
+            return err;
+        }
+    }
 
     memset(&ifr, 0, sizeof(ifr));
 
