@@ -499,7 +499,7 @@ int qemuSetupCgroupVcpuPin(virCgroupPtr cgroup,
 
     for (i = 0; i < nvcpupin; i++) {
         if (vcpuid == vcpupin[i]->vcpuid) {
-            return qemuSetupCgroupEmulatorPin(cgroup, vcpupin[i]);
+            return qemuSetupCgroupEmulatorPin(cgroup, vcpupin[i]->cpumask);
         }
     }
 
@@ -507,12 +507,12 @@ int qemuSetupCgroupVcpuPin(virCgroupPtr cgroup,
 }
 
 int qemuSetupCgroupEmulatorPin(virCgroupPtr cgroup,
-                               virDomainVcpuPinDefPtr vcpupin)
+                               virBitmapPtr cpumask)
 {
     int rc = 0;
     char *new_cpus = NULL;
 
-    new_cpus = virBitmapFormat(vcpupin->cpumask);
+    new_cpus = virBitmapFormat(cpumask);
     if (!new_cpus) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("failed to convert cpu mask"));
@@ -641,6 +641,7 @@ cleanup:
 int qemuSetupCgroupForEmulator(struct qemud_driver *driver,
                                virDomainObjPtr vm)
 {
+    virBitmapPtr cpumask = NULL;
     virCgroupPtr cgroup = NULL;
     virCgroupPtr cgroup_emulator = NULL;
     virDomainDefPtr def = vm->def;
@@ -688,12 +689,18 @@ int qemuSetupCgroupForEmulator(struct qemud_driver *driver,
         }
     }
 
-    if (def->cputune.emulatorpin &&
-        qemuCgroupControllerActive(driver, VIR_CGROUP_CONTROLLER_CPUSET)) {
-        rc = qemuSetupCgroupEmulatorPin(cgroup_emulator,
-                                        def->cputune.emulatorpin);
-        if (rc < 0)
-            goto cleanup;
+    if (def->cputune.emulatorpin)
+        cpumask = def->cputune.emulatorpin->cpumask;
+    else if (def->cpumask)
+        cpumask = def->cpumask;
+
+    if (cpumask) {
+        if (qemuCgroupControllerActive(driver, VIR_CGROUP_CONTROLLER_CPUSET)) {
+            rc = qemuSetupCgroupEmulatorPin(cgroup_emulator, cpumask);
+            if (rc < 0)
+                goto cleanup;
+        }
+        cpumask = NULL; /* sanity */
     }
 
     if (period || quota) {
