@@ -107,7 +107,8 @@ vmwareConnectOpen(virConnectPtr conn,
         return VIR_DRV_OPEN_DECLINED;
     } else {
         if (conn->uri->scheme == NULL ||
-            (STRNEQ(conn->uri->scheme, "vmwareplayer") &&
+            (STRNEQ(conn->uri->scheme, "vmware") &&
+             STRNEQ(conn->uri->scheme, "vmwareplayer") &&
              STRNEQ(conn->uri->scheme, "vmwarews") &&
              STRNEQ(conn->uri->scheme, "vmwarefusion")))
             return VIR_DRV_OPEN_DECLINED;
@@ -115,14 +116,6 @@ vmwareConnectOpen(virConnectPtr conn,
         /* If server name is given, its for remote driver */
         if (conn->uri->server != NULL)
             return VIR_DRV_OPEN_DECLINED;
-
-        /* If path isn't /session, then they typoed, so tell them correct path */
-        if (conn->uri->path == NULL || STRNEQ(conn->uri->path, "/session")) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("unexpected VMware URI path '%s', try vmwareplayer:///session, vmwarews:///session or vmwarefusion:///session"),
-                           NULLSTR(conn->uri->path));
-            return VIR_DRV_OPEN_ERROR;
-        }
     }
 
     /* We now know the URI is definitely for this driver, so beyond
@@ -148,9 +141,6 @@ vmwareConnectOpen(virConnectPtr conn,
         goto cleanup;
     }
 
-    if (virMutexInit(&driver->lock) < 0)
-        goto cleanup;
-
     if ((tmp = STRSKIP(conn->uri->scheme, "vmware")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, _("unable to parse URI "
                        "scheme '%s'"), conn->uri->scheme);
@@ -160,6 +150,31 @@ vmwareConnectOpen(virConnectPtr conn,
     /* Match the non-'vmware' part of the scheme as the driver backend */
     driver->type = vmwareDriverTypeFromString(tmp);
 
+    if (driver->type != -1) {
+        /* Preserve the old behavior of requiring the older schemes to have
+         * a path of "/session", not sure of the advantage.
+         */
+        if (STRNEQ_NULLABLE(conn->uri->path, "/session")) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("unexpected VMware URI path '%s', try "
+                             "%s:///session"), NULLSTR(conn->uri->path),
+                           conn->uri->scheme);
+            goto cleanup;
+        }
+    } else if (STREQ(conn->uri->scheme, "vmware")) {
+        /* If they used the newer "vmware" scheme, use the path if provided
+         * to determine the driver backend to use.
+         */
+        if (conn->uri->path && strlen(conn->uri->path) > 1 &&
+            (driver->type = vmwareDriverTypeFromString(conn->uri->path + 1)) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("unexpected VMware URI path '%s', try the product "
+                             "name you are attempting to use (e.g. "
+                             "workstation)"), conn->uri->path);
+            goto cleanup;
+        }
+    }
+
     if (driver->type == -1) {
         virReportError(VIR_ERR_INTERNAL_ERROR, _("unable to find valid "
                        "requested VMware backend '%s'"), tmp);
@@ -167,6 +182,9 @@ vmwareConnectOpen(virConnectPtr conn,
     }
 
     if (vmwareExtractVersion(driver) < 0)
+        goto cleanup;
+
+    if (virMutexInit(&driver->lock) < 0)
         goto cleanup;
 
     if (!(driver->domains = virDomainObjListNew()))

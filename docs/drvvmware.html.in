@@ -35,6 +35,7 @@
     Three uris are available:
     </p>
     <ul>
+      <li>"vmware" for VMware Player / Workstation / Fusion</li>
       <li>"vmwareplayer" for VMware Player</li>
       <li>"vmwarews" for VMware Workstation</li>
       <li>"vmwarefusion" for VMware Fusion</li>
@@ -44,6 +45,11 @@
     </p>
 
 <pre>
+vmware:///player                         (local access to VMware Player per-user instance)
+vmware:///ws                             (local access to VMware Workstation per-user instance)
+vmware:///fusion                         (local access to VMware Fusion per-user instance)
+vmware+ssh://user@example.com/ws         (remote access to VMware Workstation, SSH tunnelled)
+vmware:///                               (local access to VMware, auto-detecting Workstation or Player)
 vmwareplayer:///session                  (local access to VMware Player per-user instance)
 vmwarews:///session                      (local access to VMware Workstation per-user instance)
 vmwarefusion:///session                      (local access to VMware Fusion per-user instance)
