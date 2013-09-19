@@ -126,8 +126,8 @@ error:
     goto cleanup;
 }
 
-int
-vmwareLoadDomains(struct vmware_driver *driver)
+static int
+vmwareLoadDomainsByState(struct vmware_driver *driver, int state)
 {
     virDomainDefPtr vmdef = NULL;
     virDomainObjPtr vm = NULL;
@@ -147,7 +147,8 @@ vmwareLoadDomains(struct vmware_driver *driver)
 
     cmd = virCommandNewArgList(driver->vmrun, "-T",
                                vmwareDriverTypeToString(driver->type),
-                               "list", NULL);
+                               state == VIR_DOMAIN_RUNNING ? "list" :
+                               "listRegisteredVM", NULL);
     virCommandSetOutputBuffer(cmd, &outbuf);
     if (virCommandRun(cmd, NULL) < 0)
         goto cleanup;
@@ -181,8 +182,12 @@ vmwareLoadDomains(struct vmware_driver *driver)
         if ((vm->def->id = vmwareExtractPid(vmxPath)) < 0)
             goto cleanup;
         /* vmrun list only reports running vms */
-        virDomainObjSetState(vm, VIR_DOMAIN_RUNNING,
-                             VIR_DOMAIN_RUNNING_UNKNOWN);
+        if (state == VIR_DOMAIN_RUNNING)
+            virDomainObjSetState(vm, VIR_DOMAIN_RUNNING,
+                                 VIR_DOMAIN_RUNNING_UNKNOWN);
+        else
+            virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF,
+                                 VIR_DOMAIN_SHUTOFF_UNKNOWN);
         vm->persistent = 1;
 
         virObjectUnlock(vm);
@@ -202,6 +207,18 @@ cleanup:
     VIR_FREE(vmx);
     virObjectUnref(vm);
     return ret;
+}
+
+int
+vmwareLoadDomains(struct vmware_driver *driver)
+{
+    int retval;
+
+    retval = vmwareLoadDomainsByState(driver, VIR_DOMAIN_RUNNING);
+    if (retval)
+        return retval;
+
+    return vmwareLoadDomainsByState(driver, VIR_DOMAIN_SHUTOFF);
 }
 
 void
