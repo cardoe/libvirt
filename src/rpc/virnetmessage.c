@@ -33,6 +33,12 @@
 
 #define VIR_FROM_THIS VIR_FROM_RPC
 
+#if XDRPROC_T_ARG_COUNT == 3
+# define VIR_XDRPROC(proc, xdr, data) ((proc)((xdr), (data), 0))
+#else
+# define VIR_XDRPROC(proc, xdr, data) ((proc)((xdr), (data)))
+#endif
+
 virNetMessagePtr virNetMessageNew(bool tracked)
 {
     virNetMessagePtr msg;
@@ -345,7 +351,7 @@ int virNetMessageEncodePayload(virNetMessagePtr msg,
                   msg->bufferLength - msg->bufferOffset, XDR_ENCODE);
 
     /* Try to encode the payload. If the buffer is too small increase it. */
-    while (!(*filter)(&xdr, data)) {
+    while (!VIR_XDRPROC(*filter, &xdr, data)) {
         unsigned int newlen = (msg->bufferLength - VIR_NET_MESSAGE_LEN_MAX) * 4;
 
         if (newlen > VIR_NET_MESSAGE_MAX) {
@@ -402,7 +408,7 @@ int virNetMessageDecodePayload(virNetMessagePtr msg,
     xdrmem_create(&xdr, msg->buffer + msg->bufferOffset,
                   msg->bufferLength - msg->bufferOffset, XDR_DECODE);
 
-    if (!(*filter)(&xdr, data)) {
+    if (!VIR_XDRPROC(*filter, &xdr, data)) {
         virReportError(VIR_ERR_RPC, "%s", _("Unable to decode message payload"));
         goto error;
     }

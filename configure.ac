@@ -697,6 +697,47 @@ if test x"$with_remote" = x"yes" || test x"$with_libvirtd" = x"yes"; then
       *) XDR_CFLAGS=$lv_cv_xdr_cflags ;;
     esac
     AC_SUBST([XDR_CFLAGS])
+
+    dnl Mac OS X Mavericks (10.9) dropped the varargs definition that
+    dnl allowed 2 or 3 parameters to xdrproc_t callbacks and decided on
+    dnl 3 arguments being a must.
+    old_CFLAGS=$CFLAGS
+    AC_CACHE_CHECK([whether xdrproc_t callbacks take 2 or 3 args],
+                   [lv_cv_xdrproc_t_args], [
+      CFLAGS="$old_CFLAGS $XDR_CFLAGS"
+      AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [[
+          #include <rpc/rpc.h>
+        ]],
+        [[
+          XDR xdr;
+          xdrproc_t filter = NULL;
+
+          return (filter)(&xdr, NULL);
+        ]])],
+        [lv_cv_xdrproc_t_args=2], [
+          AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+            [[
+              #include <rpc/rpc.h>
+            ]],
+            [[
+              XDR xdr;
+              xdrproc_t filter = NULL;
+
+              return (filter)(&xdr, NULL, 0);
+            ]])],
+            [lv_cv_xdrproc_t_args=3],
+            [lv_cv_xdrproc_t_args=unknown])
+        ])
+    CFLAGS="$old_CFLAGS"
+    ])
+    case $lv_cv_xdrproc_t_args in
+      unknown) AC_MSG_ERROR([cannot determine arg count for xdrproc_t]) ;;
+      *)
+      AC_DEFINE_UNQUOTED([XDRPROC_T_ARG_COUNT], [$lv_cv_xdrproc_t_args],
+                         [number of arguments that xdrproc_t func ptr takes])
+      ;;
+    esac
 fi
 
 
