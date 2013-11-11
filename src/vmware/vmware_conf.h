@@ -61,6 +61,8 @@ void vmwareFreeDriver(struct vmware_driver *driver);
 
 virCapsPtr vmwareCapsInit(void);
 
+int vmwareParseInventory(const char *inventory, int len, char ***vmx);
+
 int vmwareLoadDomains(struct vmware_driver *driver);
 
 void vmwareSetSentinal(const char **prog, const char *key);

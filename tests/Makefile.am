@@ -114,6 +114,7 @@ EXTRA_DIST =		\
 	xmconfigdata \
 	xml2sexprdata \
 	xml2vmxdata \
+	vmwareinventorydata \
 	vmwareverdata \
 	.valgrind.supp
 
@@ -209,7 +210,7 @@ test_programs += vmx2xmltest xml2vmxtest
 endif WITH_VMX
 
 if WITH_VMWARE
-test_programs += vmwarevertest
+test_programs += vmwareinventorytest vmwarevertest
 endif WITH_VMWARE
 
 if WITH_CIL
@@ -545,8 +546,12 @@ vmwarevertest_SOURCES = \
     vmwarevertest.c \
     testutils.c testutils.h
 vmwarevertest_LDADD = $(LDADDS)
+vmwareinventorytest_SOURCES = \
+    vmwareinventorytest.c \
+    testutils.c testutils.h
+vmwareinventorytest_LDADD = $(LDADDS)
 else ! WITH_VMWARE
-EXTRA_DIST += vmwarevertest.c
+EXTRA_DIST += vmwareinventorytest.c vmwarevertest.c
 endif ! WITH_VMWARE
 
 networkxml2xmltest_SOURCES = \

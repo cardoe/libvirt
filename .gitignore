@@ -210,6 +210,7 @@
 /tests/virsystemdtest
 /tests/virtimetest
 /tests/viruritest
+/tests/vmwareinventorytest
 /tests/vmwarevertest
 /tests/vmx2xmltest
 /tests/xencapstest

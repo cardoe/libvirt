@@ -4,6 +4,7 @@
 
 # vmware/vmware_conf.h
 vmwareDriverTypeFromString;
+vmwareParseInventory;
 vmwareParseVersionStr;
 
 # Let emacs know we want case-insensitive sorting

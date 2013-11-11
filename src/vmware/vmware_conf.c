@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2011-2012 Red Hat, Inc.
  * Copyright 2010, diateam (www.diateam.net)
+ * Copyright (C) 2013, Doug Goldstein <cardoe@cardoe.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -203,6 +204,123 @@ cleanup:
     VIR_FREE(vmx);
     virObjectUnref(vm);
     return ret;
+}
+
+/**
+ * Parses a VMware inventory file to gather all the VMX files which
+ * are individual config files for each VM.
+ *
+ * @param inventory - contents of a VMware inventory file
+ * @param len - size of the inventory buffer
+ * @param vmx - output list of file paths to each of the VMX files
+ *
+ * @return -1 on failure, 0 on success
+ */
+int
+vmwareParseInventory(const char *inventory, int len, char ***vmx)
+{
+    virConfPtr conf;
+    char *encoding = NULL;
+    char *utf8;
+    size_t vmentry_offset = 1;
+    size_t machines = 0;
+    size_t i;
+    size_t max_entries = 0;
+    int got_config;
+    char *vmentry = NULL;
+    char *vmxconfig = NULL;
+    char **configs = NULL;
+
+    if (!vmx)
+        return -1;
+
+    *vmx = NULL;
+
+    /* Parse the input data as a VMX-style config file */
+    conf = virConfReadMem(inventory, len, VIR_CONF_FLAG_VMX_FORMAT);
+    if (!conf) {
+        goto error;
+    }
+
+    if (virVMXGetConfigString(conf, ".encoding", &encoding, true) < 0) {
+        goto error;
+    }
+
+    /* If the data is not in UTF-8 format, convert it and re-parse it */
+    if (!encoding && STRCASENEQ(encoding, "UTF-8")) {
+        virConfFree(conf);
+        conf = NULL;
+
+        utf8 = virVMXConvertToUTF8(encoding, inventory);
+        if (!utf8) {
+            goto error;
+        }
+
+        conf = virConfReadMem(utf8, strlen(utf8), VIR_CONF_FLAG_VMX_FORMAT);
+        VIR_FREE(utf8);
+        if (!conf) {
+            goto error;
+        }
+    }
+    VIR_FREE(encoding);
+
+    do {
+        /* VMX config files are in the syntax of vmlistX.config where
+         * X is an integer starting from 1
+         */
+        if (virAsprintf(&vmentry, "vmlist%zu.config", vmentry_offset) < 0)
+            goto error;
+
+        /* Fetch the field, if it doesn't exist then we had our last one */
+        got_config = virVMXGetConfigString(conf, vmentry, &vmxconfig, true);
+        VIR_FREE(vmentry);
+        if (got_config == 0) {
+            break;
+        }
+
+        /* VMware will put empty entries for VMs that were deleted.
+         * VMware will also list machines that don't have true VMX
+         * files and their documentation doesn't include information
+         * about these so we must skip them for now until we know how to
+         * parse them.
+         */
+        if (vmxconfig[0] == 0 || !virFileHasSuffix(vmxconfig, ".vmx")) {
+            VIR_FREE(vmxconfig);
+            vmentry_offset++;
+            continue;
+        }
+
+        if (VIR_RESIZE_N(configs, max_entries, machines, 1) < 0) {
+            goto error;
+        }
+
+        /* Store the path to the VMX file so we can parse it later on. */
+        configs[machines] = vmxconfig;
+
+        machines++;
+        vmentry_offset++;
+    } while (got_config);
+
+    virConfFree(conf);
+
+    configs[machines] = NULL;
+    *vmx = configs;
+
+    return 0;
+
+error:
+    VIR_FREE(vmxconfig);
+    VIR_FREE(vmentry);
+    VIR_FREE(encoding);
+
+    for (i = 0; i < machines; i++) {
+        VIR_FREE(configs[i]);
+    }
+    VIR_FREE(configs);
+
+    virConfFree(conf);
+
+    return -1;
 }
 
 void
