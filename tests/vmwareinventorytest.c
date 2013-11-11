@@ -118,6 +118,8 @@ mymain(void)
     } while (0)
 
     DO_TEST("single-machine", "single-machine");
+    DO_TEST("fusion-example-1", "fusion-example-1");
+    DO_TEST("workstation-example-1", "workstation-example-1");
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
