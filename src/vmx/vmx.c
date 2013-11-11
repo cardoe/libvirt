@@ -645,7 +645,7 @@ virVMXConvertToUTF8(const char *encoding, const char *string)
 
 
 
-static int
+int
 virVMXGetConfigString(virConfPtr conf, const char *name, char **string,
                       bool optional)
 {

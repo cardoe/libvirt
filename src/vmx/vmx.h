@@ -73,7 +73,8 @@ int virVMXUnescapeHex(char *string, char escape);
 
 char *virVMXConvertToUTF8(const char *encoding, const char *string);
 
-
+int virVMXGetConfigString(virConfPtr conf, const char *name, char **string,
+                          bool optional);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * VMX -> Domain XML

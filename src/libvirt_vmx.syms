@@ -13,6 +13,7 @@ virVMXFormatFloppy;
 virVMXFormatParallel;
 virVMXFormatSerial;
 virVMXFormatVNC;
+virVMXGetConfigString;
 virVMXParseConfig;
 virVMXParseDisk;
 virVMXParseEthernet;
