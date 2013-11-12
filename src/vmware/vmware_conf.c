@@ -128,6 +128,7 @@ error:
     goto cleanup;
 }
 
+#if 0
 int
 vmwareLoadDomains(struct vmware_driver *driver)
 {
@@ -202,6 +203,107 @@ cleanup:
     VIR_FREE(directoryName);
     VIR_FREE(fileName);
     VIR_FREE(vmx);
+    virObjectUnref(vm);
+    return ret;
+}
+#endif
+
+int
+vmwareLoadDomains(struct vmware_driver *driver)
+{
+    virDomainDefPtr vmdef = NULL;
+    virDomainObjPtr vm = NULL;
+    char **vmxFiles = NULL;
+    char *vmx = NULL;
+    vmwareDomainPtr pDomain;
+    char *directoryName = NULL;
+    char *fileName = NULL;
+    int ret = -1;
+    virVMXContext ctx;
+    char *outbuf = NULL;
+    char *str = NULL;
+    size_t i;
+
+    ctx.parseFileName = vmwareCopyVMXFileName;
+
+    if (virAsprintf(&str, "%s/Library/Application Support/"
+                    "VMware Fusion/vmInventory", virGetUserDirectory()) < 0)
+        goto cleanup;
+
+    if (virFileReadAll(str, 100000, &outbuf) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                _("Unable to read from VM Inventory '%s'\n"), str);
+        goto cleanup;
+    }
+
+    if (vmwareParseInventory(outbuf, strlen(outbuf), &vmxFiles) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                _("Unable to parse VMware inventory file at '%s'\n"), str);
+        goto cleanup;
+    }
+
+    if (!vmxFiles) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                _("No VMX files available."));
+        goto cleanup;
+    }
+
+    for (i = 0; vmxFiles[i]; i++) {
+
+        if (vmxFiles[i][0] != '/')
+            continue;
+
+        if (virFileReadAll(vmxFiles[i], 10000, &vmx) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                    _("Unable to read data from VMX file '%s'\n"),
+                    vmxFiles[i]);
+            goto cleanup;
+        }
+
+        if ((vmdef =
+             virVMXParseConfig(&ctx, driver->xmlopt, vmx)) == NULL) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                    _("Unable to parse VMX file '%s'\n"), vmxFiles[i]);
+            goto cleanup;
+        }
+
+        if (!(vm = virDomainObjListAdd(driver->domains, vmdef,
+                                       driver->xmlopt,
+                                       0, NULL)))
+            goto cleanup;
+
+        pDomain = vm->privateData;
+
+        if (VIR_STRDUP(pDomain->vmxPath, vmxFiles[i]) < 0)
+            goto cleanup;
+
+        vmwareDomainConfigDisplay(pDomain, vmdef);
+
+        /*
+        if ((vm->def->id = vmwareExtractPid(vmxFiles[i])) < 0)
+            goto cleanup;
+            */
+        /* vmrun list only reports running vms */
+        virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF,
+                             VIR_DOMAIN_SHUTOFF_UNKNOWN);
+        vm->persistent = 1;
+
+        virObjectUnlock(vm);
+
+        vmdef = NULL;
+        vm = NULL;
+    }
+
+    ret = 0;
+
+cleanup:
+    virStringFreeList(vmxFiles);
+    VIR_FREE(outbuf);
+    virDomainDefFree(vmdef);
+    VIR_FREE(directoryName);
+    VIR_FREE(fileName);
+    VIR_FREE(vmx);
+    VIR_FREE(str);
     virObjectUnref(vm);
     return ret;
 }
